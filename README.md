@@ -82,3 +82,7 @@ starts it from the defaults. Everything is saved in the workbook.
 3. Add the URL to the Tableau Server/Cloud extension safe list. `dev/` doesn't need to be deployed.
 
 Tableau reads the `.trex` only when the extension is added, so after editing it, remove the extension and add it again.
+
+### Fast reload (last-render cache)
+
+After each successful render the extension saves its result in the browser (localStorage, per Tableau Server and worksheet name). On the next load it draws that saved result as soon as Tableau reports the fields on the Marks card, then replaces it with the live data. The cache is only used when the same fields are encoded and it is less than 30 days old; it never leaves the browser, and clearing site data removes it.

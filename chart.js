@@ -44,7 +44,9 @@
     });
     window.addEventListener('blur', hideMenu);
 
+    if (window.ExtTiming) ExtTiming.mark('initializeAsync start');
     return tableau.extensions.initializeAsync({ configure: function () { return openDialog(null); } }).then(function () {
+      if (window.ExtTiming) ExtTiming.mark('initializeAsync done (Tableau handshake)');
       worksheet = tableau.extensions.worksheetContent.worksheet;
       cfg = Wf.read();
 
@@ -174,11 +176,22 @@
   // ---------------------------------------------------------------------------
   async function refresh () {
     var token = ++renderToken;
+    var T = window.ExtTiming || { mark: function () {}, done: function () {}, line: function () {} };
+    var t0 = performance.now();
+    var first = token === 1;
+    var ms = function () { return Math.round(performance.now() - t0); };
+    if (first) T.mark('data requested');
     try {
       // Ask Tableau for the encodings and the data at the same time (one round trip instead of two).
       // A data error only matters when fields are encoded, so it is held until then.
-      var fieldsP = getEncodedFields();
-      var dataP = readSummaryData().catch(function (err) { return { error: err }; });
+      var tFields = 0;
+      var tData = 0;
+      var fieldsP = getEncodedFields().then(function (r) { tFields = ms(); if (first) T.mark('fields received (Marks card)'); return r; });
+      var dataP = readSummaryData().then(function (r) {
+        tData = ms();
+        if (first) T.mark('data received', (r && r.data ? r.data.length : 0) + ' rows');
+        return r;
+      }).catch(function (err) { tData = ms(); return { error: err }; });
 
       // First load: draw the last result from cache while the live data is on its way.
       if (!cacheTried) {
@@ -188,7 +201,7 @@
           var cached = readCache(f);
           if (!cached) return;
           model = cached;
-          try { paint(); } catch (e) { model = null; }
+          try { paint(); T.mark('cached result drawn'); } catch (e) { model = null; }
         }).catch(function () { /* handled below */ });
       }
 
@@ -199,6 +212,7 @@
       if (!fields.start.length && !fields.steps.length && !fields.end.length) {
         model = null;
         clearCache();
+        if (first) { T.mark('no fields on the Marks card'); T.done('Waterfall load timings'); }
         showEmpty('Drag measures onto <b>Start</b>, <b>Changes</b> (one at a time) and <b>End</b>.<br>' +
           'Add a dimension to <b>Breakdown</b> to split the change bars.');
         return;
@@ -208,10 +222,19 @@
       if (table && table.error) throw table.error;
 
       model = extract(table, fields);
+      var tp = performance.now();
       paint();
+      if (first) {
+        T.mark('live result drawn', 'draw ' + Math.round(performance.now() - tp) + ' ms');
+        T.done('Waterfall load timings');
+      } else {
+        T.line('refresh #' + token + ': fields ' + tFields + ' ms, data ' + tData + ' ms (' +
+          (table.data ? table.data.length : 0) + ' rows), draw ' + Math.round(performance.now() - tp) + ' ms');
+      }
       writeCache(fields, model);
     } catch (err) {
       console.error('Waterfall render failed:', err);
+      if (first) { T.mark('render failed', err && err.message); T.done('Waterfall load timings'); }
       if (token === renderToken) showEmpty('Could not read the worksheet data. See the console for details.');
     }
   }

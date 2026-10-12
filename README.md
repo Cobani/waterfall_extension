@@ -12,7 +12,7 @@ chart.css/js     header, data reading, chart drawing, tooltip, right-click menu
 configure.*      Format dialog (every option below)
 config.js        shared defaults, number formatting, the KPI Card 3 icon set
 icons.js, icons/ the Figma icons (same files as KPI Card 3)
-fonts/           Lato 2.0 (OFL)
+fonts/           Lato 2.0 (OFL), WOFF2 Latin subset (~38 KB per weight)
 serve.py/.sh     local server on :8767, also lists Tableau shape palettes
 dev/             browser preview with sample data (no Tableau needed)
 ```

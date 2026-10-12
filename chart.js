@@ -103,8 +103,14 @@
   async function refresh () {
     var token = ++renderToken;
     try {
-      var fields = await getEncodedFields();
+      // Ask Tableau for the encodings and the data at the same time (one round trip instead of two).
+      // A data error only matters when fields are encoded, so it is held until then.
+      var results = await Promise.all([
+        getEncodedFields(),
+        readSummaryData().catch(function (err) { return { error: err }; })
+      ]);
       if (token !== renderToken) return;
+      var fields = results[0];
 
       if (!fields.start.length && !fields.steps.length && !fields.end.length) {
         model = null;
@@ -113,8 +119,8 @@
         return;
       }
 
-      var table = await readSummaryData();
-      if (token !== renderToken) return;
+      var table = results[1];
+      if (table && table.error) throw table.error;
 
       model = extract(table, fields);
       paint();

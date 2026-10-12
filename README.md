@@ -10,8 +10,8 @@ waterfall.trex   manifest: Marks card tiles + "Format Extension" button
 index.html       chart page
 chart.css/js     header, data reading, chart drawing, tooltip, right-click menu
 configure.*      Format dialog (every option below)
-config.js        shared defaults, number formatting, the KPI Card 3 icon set
-icons.js, icons/ the Figma icons (same files as KPI Card 3)
+config.js        shared defaults, number formatting
+icons.js, icons/extension/ the 14 Figma icons from *Icons for Extension* (same files as KPI Card)
 fonts/           Lato 2.0 (OFL), WOFF2 Latin subset (~38 KB per weight)
 serve.py/.sh     local server on :8767, also lists Tableau shape palettes
 dev/             browser preview with sample data (no Tableau needed)

@@ -100,8 +100,8 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Last-render cache: on load, draw the previous result straight away (as soon
-  // as the encodings are known), then replace it with the live data. Stored in
+  // Last-render cache: on load, draw the previous result straight away (right
+  // after the Tableau handshake), then replace it with the live data. Stored in
   // this browser only (localStorage), per worksheet, and only reused when the
   // same fields are on the Marks card. Any storage error just skips the cache.
   // ---------------------------------------------------------------------------
@@ -140,13 +140,14 @@
     return v;
   }
 
-  function readCache (fields) {
+  /** The saved result for this worksheet, if fresh: { sig, data }. */
+  function readCacheEntry () {
     try {
       var s = window.localStorage.getItem(cacheKey());
       if (!s) return null;
       var c = JSON.parse(s, dec);
-      if (!c || c.sig !== fieldsSig(fields) || !(Date.now() - c.t < CACHE_MAX_AGE)) return null;
-      return c.data;
+      if (!c || !c.data || !(Date.now() - c.t < CACHE_MAX_AGE)) return null;
+      return c;
     } catch (e) { return null; }
   }
 
@@ -193,16 +194,24 @@
         return r;
       }).catch(function (err) { tData = ms(); return { error: err }; });
 
-      // First load: draw the last result from cache while the live data is on its way.
+      // First load: draw the last result from cache right after the handshake,
+      // while Tableau is still working on the fields and the data. If the fields
+      // on the Marks card turn out to be different, the cached drawing is removed.
       if (!cacheTried) {
         cacheTried = true;
-        fieldsP.then(function (f) {
-          if (token !== renderToken || model || (!f.start.length && !f.steps.length && !f.end.length)) return;
-          var cached = readCache(f);
-          if (!cached) return;
-          model = cached;
-          try { paint(); T.mark('cached result drawn'); } catch (e) { model = null; }
-        }).catch(function () { /* handled below */ });
+        var entry = readCacheEntry();
+        if (entry && !model) {
+          model = entry.data;
+          try { paint(); T.mark('cached result drawn'); } catch (e) { model = null; entry = null; }
+        }
+        if (entry) {
+          fieldsP.then(function (f) {
+            if (token !== renderToken || model !== entry.data || entry.sig === fieldsSig(f)) return;
+            model = null;
+            showEmpty('');
+            T.mark('cached result removed (fields changed)');
+          }).catch(function () { /* handled below */ });
+        }
       }
 
       var results = await Promise.all([fieldsP, dataP]);

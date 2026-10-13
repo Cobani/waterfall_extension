@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Waterfall</title>
-    <link rel="stylesheet" href="./fonts/fonts.css" />
-    <link rel="stylesheet" href="./chart.css" />
-    <script src="./timing.js"></script>
-    <script src="./icons.js"></script>
-    <script src="./config.js"></script>
-    <script src="./chart.js"></script>
+    <link rel="stylesheet" href="./fonts/fonts.css?v=22ceb76171" />
+    <link rel="stylesheet" href="./chart.css?v=32817662fe" />
+    <script src="./timing.js?v=666dc99b7c"></script>
+    <script src="./icons.js?v=899a3f9c7f"></script>
+    <script src="./config.js?v=38e61229e1"></script>
+    <script src="./chart.js?v=94b0685271"></script>
   </head>
 
   <body>
@@ -32,12 +32,12 @@
 
     <script>
       // Dev preview only: index.html?mock loads a stand-in for the Tableau API.
-      if (/[?&]mock\b/.test(location.search)) document.write('<script src="./dev/mock.js"><\/script>');
+      if (/[?&]mock\b/.test(location.search)) document.write('<script src="./dev/mock.js?v=ac0aa1e6c0"><\/script>');
     </script>
     <script>
       // Tableau Extensions API is bundled in ./lib (no CDN). Skipped when a dev mock already defined it.
       if (!(window.tableau && window.tableau.extensions)) {
-        document.write('<script src="./lib/tableau.extensions.1.17.0.min.js"><\/script>');
+        document.write('<script src="./lib/tableau.extensions.1.17.0.min.js?v=276479f2c7"><\/script>');
       }
     </script>
     <script>

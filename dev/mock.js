@@ -6,7 +6,10 @@
  *
  * - Settings live in localStorage, so the chart and the Format dialog (two
  *   frames) see each other's changes, like they do inside Tableau.
- * - Sample data: ?data=figma | breakdown | negative | raw
+ * - Sample data: ?data=figma | breakdown | negative | raw | zero
+ * - ?rename: the first change and the first Breakdown pill are "renamed"
+ *   (double-click → //New name): the Marks card reports new names and the
+ *   data columns other names, as Tableau does for inline calculations.
  */
 (function () {
   var params = new URLSearchParams(location.search);
@@ -41,6 +44,13 @@
         [['Current', 'Retail'], ['Current', 'SME'], ['Ehsan', 'Retail'], ['Musaned', 'Retail'], ['Savings', 'Retail'], ['Savings', 'SME']],
         [0.4, 0.15, 0.15, 0.1, 0.12, 0.08]]
     },
+    zero: {
+      def: {
+        start: ['SUM(Opening Balance)', 100],
+        steps: [['SUM(Bank In)', 20], ['SUM(FX Gain)', 0], ['SUM(Fees)', 0], ['SUM(Bank Out)', -15]],
+        end: ['SUM(Closing Balance)', 105]
+      }
+    },
     negative: {
       def: {
         start: ['SUM(Net Position)', 40],
@@ -52,6 +62,11 @@
 
   var dsName = params.get('data') || localStorage.getItem(DS_KEY) || 'figma';
   var DS = DATASETS[dsName] || DATASETS.figma;
+  var RENAME = /[?&]rename\b/.test(location.search);
+
+  // Renamed pills: name on the Marks card → [new pill name, column name in the data]
+  function renamedStep (name, i) { return RENAME && i === 0 ? 'Inflows (renamed)' : name; }
+  function renamedDim (name, i) { return RENAME && i === 0 ? 'Type of account' : name; }
 
   function cell (v, fmt) {
     return { value: v, nativeValue: v, formattedValue: fmt != null ? fmt : (typeof v === 'number' ? v.toLocaleString('en-US') : String(v)) };
@@ -63,8 +78,16 @@
     var measures = [d.start].concat(d.steps, [d.end]);
     var columns = [];
     var bd = DS.breakdown;
-    if (bd) bd[0].forEach(function (d) { columns.push({ fieldName: d, fieldId: '[' + d + ']', index: columns.length }); });
-    measures.forEach(function (ms) { columns.push({ fieldName: ms[0], fieldId: '[' + ms[0] + ']', index: columns.length }); });
+    if (bd) {
+      bd[0].forEach(function (d, i) {
+        var n = renamedDim(d, i) !== d ? 'Calculation_8812' : d;
+        columns.push({ fieldName: n, fieldId: '[' + n + ']', dataType: 'string', index: columns.length });
+      });
+    }
+    measures.forEach(function (ms, j) {
+      var n = j === 1 && RENAME ? 'Calculation_4410' : ms[0];
+      columns.push({ fieldName: n, fieldId: '[' + n + ']', dataType: 'float', index: columns.length });
+    });
     var data = [];
     if (bd) {
       bd[1].forEach(function (member, mi) {
@@ -88,9 +111,9 @@
   function encodings () {
     var d = DS.def;
     var enc = [{ id: 'start', field: m(d.start[0]) }];
-    d.steps.forEach(function (s) { enc.push({ id: 'steps', field: m(s[0]) }); });
+    d.steps.forEach(function (s, i) { enc.push({ id: 'steps', field: m(renamedStep(s[0], i)) }); });
     enc.push({ id: 'end', field: m(d.end[0]) });
-    if (DS.breakdown) DS.breakdown[0].forEach(function (d) { enc.push({ id: 'breakdown', field: m(d) }); });
+    if (DS.breakdown) DS.breakdown[0].forEach(function (d, i) { enc.push({ id: 'breakdown', field: m(renamedDim(d, i)) }); });
     return enc;
   }
 

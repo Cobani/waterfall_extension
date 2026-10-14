@@ -53,7 +53,7 @@
       worksheet.addEventListener(tableau.TableauEventType.SummaryDataChanged, refresh);
       tableau.extensions.settings.addEventListener(
         tableau.TableauEventType.SettingsChanged,
-        function () { cfg = Wf.read(); paint(); }
+        function () { cfg = Wf.read(); reconcileKeys(); paint(); }
       );
 
       if (window.ResizeObserver) {
@@ -86,7 +86,7 @@
       (/[?&]mock\b/.test(location.search) ? '?mock' : '');
     var payload = JSON.stringify({
       focus: focus || null,
-      bars: model ? allBars().map(function (b) { return { key: b.key, kind: b.kind, name: b.name, sign: b.v < 0 ? -1 : 1 }; }) : [],
+      bars: model ? allBars().map(function (b) { return { key: b.key, kind: b.kind, name: b.name, sign: b.neg || b.v < 0 ? -1 : 1 }; }) : [],
       dims: model ? model.dims : [],
       combos: model ? model.combos : [],
       hasBreakdown: !!(model && model.dims.length)
@@ -231,6 +231,7 @@
       if (table && table.error) throw table.error;
 
       model = extract(table, fields);
+      reconcileKeys();
       var tp = performance.now();
       paint();
       if (first) {
@@ -272,13 +273,64 @@
     return String(s || '').replace(/^[A-Z_]+\((.*)\)$/i, '$1').trim().toLowerCase();
   }
 
+  /** Name without an inline-calculation comment: "SUM([X]) //New name" → both parts. */
+  function nameParts (s) {
+    var str = String(s || '');
+    var i = str.indexOf('//');
+    if (i < 0) return [norm(str)];
+    return [norm(str.slice(i + 2)), norm(str.slice(0, i))].filter(Boolean);
+  }
+
+  function isMN (c) { return /^measure (names|values)$/i.test(c.fieldName); }
+  function isNumericCol (c) { return /^(float|int|real|integer|number)$/i.test(String(c.dataType || '')); }
+
+  /** Column for a field by id or name (exact, without aggregation, or around a // comment). */
   function findColumn (table, field, taken) {
     if (!field) return null;
-    var cols = table.columns.filter(function (c) { return taken.indexOf(c) < 0; });
-    return cols.find(function (c) { return c.fieldId && c.fieldId === field.id; }) ||
+    var cols = table.columns.filter(function (c) { return taken.indexOf(c) < 0 && !isMN(c); });
+    var fid = field.id || field.fieldId;
+    var fn = nameParts(field.name);
+    return cols.find(function (c) { return fid && c.fieldId && c.fieldId === fid; }) ||
       cols.find(function (c) { return c.fieldName === field.name; }) ||
       cols.find(function (c) { return norm(c.fieldName) === norm(field.name); }) ||
+      cols.find(function (c) {
+        var cn = nameParts(c.fieldName);
+        return cn.some(function (x) { return fn.indexOf(x) >= 0; });
+      }) ||
       null;
+  }
+
+  /**
+   * Fields that couldn't be matched by id or name get the columns nobody else
+   * took, in order: dimensions prefer text/date columns, measures numeric ones.
+   * This happens when a pill is renamed (double-click, "//New name"): Tableau
+   * then reports the field and its data column under different names.
+   */
+  function matchLeftovers (table, reqs, taken, pivoted) {
+    var free = function () {
+      return table.columns.filter(function (c) { return taken.indexOf(c) < 0 && !isMN(c); });
+    };
+    var take = function (r, c) { if (c) { r.col = c; taken.push(c); r.guessed = true; } };
+    // 1. dimensions → text / date columns
+    reqs.forEach(function (r) {
+      if (!r.col && r.dim) take(r, free().find(function (x) { return !isNumericCol(x); }));
+    });
+    // 2. measures → numeric columns (not when they come as Measure Names / Values)
+    if (!pivoted) {
+      reqs.forEach(function (r) {
+        if (!r.col && !r.dim) take(r, free().find(isNumericCol));
+      });
+    }
+    // 3. anything left (numeric dimensions, columns without a data type) → in order
+    reqs.forEach(function (r) {
+      if (!r.col && (r.dim || !pivoted)) take(r, free()[0]);
+    });
+    var guessed = reqs.filter(function (r) { return r.guessed; });
+    if (guessed.length) {
+      console.info('Waterfall: matched renamed fields by position:', guessed.map(function (r) {
+        return (r.field && r.field.name) + ' → ' + r.col.fieldName;
+      }));
+    }
   }
 
   function toNumber (cell) {
@@ -304,19 +356,11 @@
     var cMN = table.columns.find(function (c) { return /^measure names$/i.test(c.fieldName); });
     var cMV = table.columns.find(function (c) { return /^measure values$/i.test(c.fieldName); });
 
-    var cBrk = [];
-    var fBrk = [];
-    fields.breakdown.forEach(function (f) {
-      var c = findColumn(table, f, taken);
-      if (c) { taken.push(c); cBrk.push(c); fBrk.push(f); }
-    });
-
+    // Match every field to its column: first by id / name, then the leftovers by position.
+    var bReqs = fields.breakdown.map(function (f) { return { field: f, dim: true, col: null }; });
     function measure (field, kind, key) {
-      var col = findColumn(table, field, taken);
-      if (col) taken.push(col);
-      return { field: field, col: col, kind: kind, key: key, name: cleanName(field.name), total: 0, n: 0, fv: null, per: {} };
+      return { field: field, col: null, kind: kind, key: key, name: cleanName(field.name), total: 0, n: 0, fv: null, per: {} };
     }
-
     var ms = [];
     if (fields.start[0]) ms.push(measure(fields.start[0], 'start', '__start'));
     var seen = {};
@@ -327,6 +371,17 @@
       ms.push(measure(f, 'step', key));
     });
     if (fields.end[0]) ms.push(measure(fields.end[0], 'end', '__end'));
+
+    var reqs = bReqs.concat(ms);
+    reqs.forEach(function (r) {
+      r.col = findColumn(table, r.field, taken);
+      if (r.col) taken.push(r.col);
+    });
+    matchLeftovers(table, reqs, taken, !!(cMN && cMV));
+
+    var cBrk = [];
+    var fBrk = [];
+    bReqs.forEach(function (r) { if (r.col) { cBrk.push(r.col); fBrk.push(r.field); } });
 
     // Distinct combinations of the Breakdown values, in data order.
     var combos = [];
@@ -368,6 +423,64 @@
       members: combos.map(function (c) { return c.join(' \u00b7 '); }),
       missing: ms.filter(function (m) { return !m.n; }).map(function (m) { return m.name; })
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Renamed pills keep their settings
+  //
+  // Settings are stored by field name (cfg.steps[name], breakdown.dims). When a
+  // pill is renamed (double-click → "//New name"), its name changes but its
+  // place on the tile doesn't. cfg.layout remembers the names last seen; a
+  // name that disappeared while a new one appeared at the same position is a
+  // rename, and its settings move to the new name.
+  // ---------------------------------------------------------------------------
+  function renames (prev, cur) {
+    var out = {};
+    if (!prev || !prev.length || prev.length !== cur.length) return out;
+    var gone = prev.filter(function (k) { return cur.indexOf(k) < 0; });
+    var added = cur.filter(function (k) { return prev.indexOf(k) < 0; });
+    if (!gone.length || gone.length !== added.length) return out;
+    gone.forEach(function (k) {
+      var n = cur[prev.indexOf(k)];
+      if (added.indexOf(n) >= 0) out[k] = n;
+    });
+    return out;
+  }
+
+  /** Applies renames to cfg (in memory) and saves when anything changed. */
+  function reconcileKeys () {
+    if (!cfg || !model || !model.dims) return;
+    var cur = {
+      steps: model.steps.map(function (st) { return st.key; }),
+      dims: model.dims.map(function (d) { return d.key; })
+    };
+    var prev = cfg.layout || { steps: [], dims: [] };
+    var dirty = false;
+
+    var rs = renames(prev.steps, cur.steps);
+    Object.keys(rs).forEach(function (oldK) {
+      var newK = rs[oldK];
+      if (cfg.steps[oldK] && !cfg.steps[newK]) {
+        cfg.steps[newK] = cfg.steps[oldK];
+        delete cfg.steps[oldK];
+        dirty = true;
+      }
+    });
+
+    var rd = renames(prev.dims, cur.dims);
+    if (Object.keys(rd).length) {
+      [cfg.stepDefaults].concat(Object.keys(cfg.steps).map(function (k) { return cfg.steps[k]; })).forEach(function (sc) {
+        var bd = sc && sc.breakdown;
+        if (!bd || !Array.isArray(bd.dims)) return;
+        bd.dims = bd.dims.map(function (k) { if (rd[k]) { dirty = true; return rd[k]; } return k; });
+      });
+    }
+
+    if (JSON.stringify(prev) !== JSON.stringify(cur)) { cfg.layout = cur; dirty = true; }
+    if (dirty) {
+      // Saving only works while authoring; viewers still get the renames in memory.
+      try { Wf.write(cfg).catch(function () { /* read-only */ }); } catch (e) { /* read-only */ }
+    }
   }
 
   /**
@@ -423,11 +536,13 @@
       level = model.start.raw;
       out.push(decorate(model.start, s, 0, model.start.raw, model.start.raw, s.color));
     }
-    model.steps.forEach(function (st) {
-      var sc = Wf.stepCfg(cfg, st.key);
-      var v = sc.invert ? -st.raw : st.raw;
-      var color = sc.colorMode === 'custom' ? sc.color : (v < 0 ? cfg.bars.negColor : cfg.bars.posColor);
+    sortedSteps().forEach(function (it) {
+      var st = it.st;
+      var sc = it.sc;
+      var v = it.v;
+      var color = sc.colorMode === 'custom' ? sc.color : (it.neg ? cfg.bars.negColor : cfg.bars.posColor);
       var b = decorate(st, sc, level, level + v, v, color);
+      b.neg = it.neg;
       b.segs = stepSegs(st, sc);
       b.members = st.rows.length ? memberList(dimOrder(sc.breakdown), sc.breakdown.sep) : [];
       level += v;
@@ -448,6 +563,36 @@
     return out;
   }
 
+  /**
+   * Change bars with settings and values, in display order: as on the Marks
+   * card, or sorted (Bars → All bars → Sort changes). Start and End never move.
+   * "Within groups" sorts each run of grouped bars in place.
+   */
+  function sortedSteps () {
+    var items = model.steps.map(function (st) {
+      var sc = Wf.stepCfg(cfg, st.key);
+      var v = sc.invert ? -st.raw : st.raw;
+      // a change of exactly 0 counts as a decrease when its sign is inverted
+      return { st: st, sc: sc, v: v, neg: v < 0 || (v === 0 && !!sc.invert) };
+    });
+    var cmp = Wf.comparer(cfg.bars.sort, function (it) { return it.v; }, function (it) { return it.st.name; });
+    if (!cmp) return items;
+    var g = cfg.groups;
+    if (cfg.bars.sortScope !== 'groups' || g.mode === 'none') return Wf.sortBy(items, cmp);
+    var gid = function (it) {
+      if (g.mode === 'sign') return it.neg ? 'neg' : 'pos';
+      return it.sc.group && g.custom[it.sc.group] ? 'c:' + it.sc.group : '';
+    };
+    var out = [];
+    var run = [];
+    items.forEach(function (it, i) {
+      if (run.length && gid(run[0]) !== gid(it)) { out = out.concat(Wf.sortBy(run, cmp)); run = []; }
+      run.push(it);
+      if (i === items.length - 1) out = out.concat(Wf.sortBy(run, cmp));
+    });
+    return out;
+  }
+
   function decorate (src, s, from, to, v, color) {
     return {
       key: src.key, kind: src.kind, name: src.name, fv: src.fv,
@@ -461,7 +606,7 @@
   }
 
   function totalText (b) {
-    return Wf.formatNumber(b.v, fmtOf(b.s.total.fmt), { signed: b.kind === 'step', fv: b.fv });
+    return Wf.formatNumber(b.v, fmtOf(b.s.total.fmt), { signed: b.kind === 'step', fv: b.fv, zeroSign: b.neg ? -1 : 1 });
   }
 
   // ---------------------------------------------------------------------------
@@ -663,13 +808,13 @@
       var id = null;
       var def = null;
       if (b.kind === 'step') {
-        if (g.mode === 'sign') { id = b.v < 0 ? 'neg' : 'pos'; def = g[id]; } else if (b.s.group && g.custom[b.s.group]) { id = b.s.group; def = g.custom[b.s.group]; }
+        if (g.mode === 'sign') { id = b.neg ? 'neg' : 'pos'; def = g[id]; } else if (b.s.group && g.custom[b.s.group]) { id = b.s.group; def = g.custom[b.s.group]; }
       }
       if (cur && cur.id === id && id) {
         cur.i1 = i; cur.total += b.v;
       } else {
         if (cur && cur.id) runs.push(cur);
-        cur = { id: id, def: def, i0: i, i1: i, total: id ? b.v : 0 };
+        cur = { id: id, def: def, i0: i, i1: i, total: id ? b.v : 0, neg: b.neg };
       }
     });
     if (cur && cur.id) runs.push(cur);
@@ -689,13 +834,11 @@
     return { stroke: l.color, 'stroke-width': l.width, 'stroke-dasharray': Wf.dashArray(l.style, l.width), 'shape-rendering': 'crispEdges' };
   }
 
+  /** Segments in the bar's breakdown order (its own, or the All bars one). Used for drawing and the tooltip. */
   function orderedSegs (b) {
-    var segs = b.segs.slice();
-    var o = cfg.bars.breakdownOrder;
-    if (o === 'desc') segs.sort(function (x, y) { return Math.abs(y.v) - Math.abs(x.v); });
-    else if (o === 'asc') segs.sort(function (x, y) { return Math.abs(x.v) - Math.abs(y.v); });
-    else if (o === 'name') segs.sort(function (x, y) { return String(x.member).localeCompare(String(y.member)); });
-    return segs;
+    var own = b.s.breakdown && b.s.breakdown.order;
+    var o = own && own !== 'inherit' ? own : cfg.bars.breakdownOrder;
+    return Wf.sortBy(b.segs, Wf.comparer(o, function (x) { return x.v; }, function (x) { return x.member; }));
   }
 
   function segColors (b) {
@@ -931,7 +1074,7 @@
       var t = b.s.total;
       if (t.show) {
         var p = t.position;
-        if (p === 'end') p = b.v < 0 ? 'below' : 'above';
+        if (p === 'end') p = b.v < 0 || b.neg ? 'below' : 'above';
         var inside = p.indexOf('inside') === 0;
         var yy;
         if (p === 'above') yy = d.yTop - 6;
@@ -957,7 +1100,7 @@
         var bf = fmtOf(bd.fmt);
         b.segGeom.forEach(function (sg) {
           var h = sg.y2 - sg.y1;
-          var txt = Wf.formatNumber(sg.seg.v, bf, { signed: true });
+          var txt = Wf.formatNumber(sg.seg.v, bf, { signed: true, zeroSign: b.neg ? -1 : 1 });
           if (bd.showNames) txt = sg.seg.member + ' ' + txt;
           var cy = (sg.y1 + sg.y2) / 2 + bd.size * 0.35;
           var attrs = { 'font-size': bd.size, 'font-weight': bd.weight, 'font-family': Wf.fontStack(family) };
@@ -1020,7 +1163,7 @@
         }
         var txt = r.def.text || '';
         if (r.def.showTotal) {
-          var tot = Wf.formatNumber(r.total, gf, { signed: true });
+          var tot = Wf.formatNumber(r.total, gf, { signed: true, zeroSign: (r.id === 'neg' || (r.id !== 'pos' && r.neg)) ? -1 : 1 });
           txt = txt ? txt + G.separator + tot : tot;
         }
         gAxes.appendChild(node('text', {
@@ -1088,7 +1231,7 @@
     var f = fmtOf(b.s.total.fmt);
     var html = '<div class="tt-name">' + esc(b.label) + '</div>';
     html += '<div class="tt-value" style="color:' + (b.kind === 'step' ? b.color : '#17202B') + '">' +
-      esc(Wf.formatNumber(b.v, f, { signed: b.kind === 'step', fv: b.fv })) + '</div>';
+      esc(Wf.formatNumber(b.v, f, { signed: b.kind === 'step', fv: b.fv, zeroSign: b.neg ? -1 : 1 })) + '</div>';
     if (b.kind === 'step') {
       html += '<div class="tt-note">' + esc(Wf.formatNumber(b.from, f)) + ' → ' + esc(Wf.formatNumber(b.to, f)) + '</div>';
     }
@@ -1103,7 +1246,7 @@
       var bf = fmtOf(b.s.breakdown.fmt);
       html += '<div class="tt-rows">' + orderedSegs(b).map(function (s) {
         return '<div class="tt-row"><span class="sw" style="background:' + colors[s.member] + '"></span><span class="nm">' +
-          esc(s.member) + '</span><span class="vl">' + esc(Wf.formatNumber(s.v, bf, { signed: true })) + '</span></div>';
+          esc(s.member) + '</span><span class="vl">' + esc(Wf.formatNumber(s.v, bf, { signed: true, zeroSign: b.neg ? -1 : 1 })) + '</span></div>';
       }).join('') + '</div>';
     }
     var tt = el.tooltip;

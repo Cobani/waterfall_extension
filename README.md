@@ -32,13 +32,14 @@ balance flow, a breakdown dimension, raw SAR values, negative values; the breakd
 | Marks card tile | What to drop | Drives |
 | --- | --- | --- |
 | **Start** | one measure | the first bar |
-| **Changes** | one measure per change, dropped **one at a time** (up to 30) | the bars in between, in the order of the pills on the tile |
+| **Changes** | one measure per change, dropped **one at a time** (up to 30) | the bars in between, in the order of the pills on the tile (or sorted, see *Order of the changes*) |
 | **End** | one measure | the last bar. Leave it empty to calculate End = Start + changes |
 | **Breakdown** | one or more dimensions (optional, up to 6) | splits change bars into segments, e.g. by account type and segment. Each bar picks which of these it uses (Format → Bars → Breakdown) |
 
 - Change bars float from the running total. Start and End bars stand on the axis.
 - If End doesn't equal Start + changes, the End tooltip shows the difference.
 - If outflows are stored as positive amounts, tick **Invert sign** for those bars.
+- A change of exactly 0 is written with its bar's sign: **+0.0**, or **−0.0** when *Invert sign* is ticked (it also takes the Decrease colour and joins the decreases group). A change that only rounds to zero keeps its own sign.
 - If Tableau delivers the changes as *Measure Names / Measure Values*, the extension pivots them back. Nothing to do.
 
 ## Formatting
@@ -56,7 +57,7 @@ opened, and **Reset tab** restores the defaults for that tab.
 | --- | --- |
 | Icon | as KPI Card 3: built-in Figma icons, Tableau shapes, upload, size, colour |
 | Title & text | as KPI Card 3. An empty title shows "Start → End" |
-| Bars | pick **Start**, any **change**, or **End**, then set it:<br>• label · colour (changes: Increase/Decrease colour or custom) · invert sign<br>• **total value**: show/hide, place (above, inside top/middle/bottom, below, or at the end it moves to), size, weight, colour<br>• **clipped-bar marker** (bar is longer than it looks): show/hide, slanted lines (Figma) / zigzag / gap, position, colours<br>• **breakdown** (changes): show/hide, **which Breakdown dimensions** this bar splits by (tick one or several) and their **order in the segment name** (▲ ▼), name separator, colours (shades of the bar colour, or one colour per member), divider lines, show values, member names, place (inside / left / right), size, weight, text colour, hide on small segments<br>• *Apply these settings to all changes*<br>**All bars:** width, corner radius, Increase/Decrease colours, breakdown order, calculate End, tooltip, right-click menu |
+| Bars | pick **Start**, any **change**, or **End**, then set it:<br>• label · colour (changes: Increase/Decrease colour or custom) · invert sign<br>• **total value**: show/hide, place (above, inside top/middle/bottom, below, or at the end it moves to), size, weight, colour<br>• **clipped-bar marker** (bar is longer than it looks): show/hide, slanted lines (Figma) / zigzag / gap, position, colours<br>• **breakdown** (changes): show/hide, **which Breakdown dimensions** this bar splits by (tick one or several) and their **order in the segment name** (▲ ▼), name separator, colours (shades of the bar colour, or one colour per member), divider lines, show values, member names, place (inside / left / right), size, weight, text colour, hide on small segments<br>• **segment order** (changes): same as All bars, or its own — the order of the segments and of the tooltip rows<br>• *Apply these settings to all changes*<br>**Order of the changes:** as on the Marks card · value high→low / low→high · size (without sign) largest / smallest first; sort **all changes together** or **within each group** (groups stay in place). Start and End never move.<br>**All bars:** width, corner radius, Increase/Decrease colours, breakdown order (default / value / size / name A→Z, Z→A — also the tooltip order), calculate End, tooltip, right-click menu |
 | Groups | none · **increases / decreases** (runs of consecutive ups and downs, like *Incoming · +412.6* in Figma) · **custom** groups you name and assign. Per group: text, colour, show total. Style: line (solid, dashed, dotted, bracket), width, inset, text size and weight, separator, optional shading behind the bars |
 | Axes | **Vertical:** starts at zero / close to the data (room below, %) / fixed value · fixed or automatic maximum · tick count · side · title (e.g. *SAR M*) · font, size, weight, colour · axis line · own number format or the shared one. **Horizontal:** labels on/off, horizontal (wrapping) / angled / vertical, max lines, font, size, weight, colour, axis line |
 | Lines | horizontal gridlines, vertical gridlines, connector lines, zero line: each with show, colour, width, solid / dashed / dotted |
@@ -74,8 +75,14 @@ bars.
 
 ## Settings and deploying
 
-Change settings are stored per measure, by the pill's name (e.g. `SUM(Bank In)`). Renaming or swapping the measure
-starts it from the defaults. Everything is saved in the workbook.
+Change settings are stored per measure, by the pill's name (e.g. `SUM(Bank In)`). Everything is saved in the workbook.
+
+**Renaming pills.** Renaming a pill on the Marks card (double-click, type `//New name`, Shift+Enter) keeps its
+settings and its breakdown: the chart remembers the pill names it last saw, and a name that disappears while a new one
+appears in the same place is treated as a rename. The data column is then found by position when Tableau reports it
+under another name (the console logs *matched renamed fields by position*). Replacing a pill with a different field
+in the same place counts as a rename too, so it keeps that slot's settings; use *Reset this bar* to start fresh.
+This protection starts once the chart has loaded in authoring mode with this version (it saves the pill names then).
 
 1. The Tableau Extensions API library is bundled in `lib/tableau.extensions.1.17.0.min.js` (no CDN). To upgrade, replace that file and update the `<script>` path in `index.html` and `configure.html`.
 2. Host the folder over HTTPS and change `<source-location><url>` in `waterfall.trex`.

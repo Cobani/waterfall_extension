@@ -24,8 +24,10 @@
         <option value="breakdown">With breakdown dimension</option>
         <option value="raw">Raw SAR (dynamic K/M/B)</option>
         <option value="negative">Negative values</option>
+        <option value="zero">Zero changes</option>
       </select>
     </label>
+    <label><input type="checkbox" id="rename"> Rename first change + first breakdown pill</label>
     <button id="fmt" type="button">Format Extension</button>
     <button id="reset" type="button">Reset settings</button>
     <span class="note">Right-click or double-click a bar to format it. Drag the zone's corner to resize.</span>
@@ -37,7 +39,10 @@
 <script>
   var ds = document.getElementById('ds');
   ds.value = localStorage.getItem('wfMockData') || 'figma';
-  function load () { document.getElementById('card').src = '../index.html?mock&data=' + ds.value; }
+  var rn = document.getElementById('rename');
+  rn.checked = localStorage.getItem('wfMockRename') === '1';
+  rn.addEventListener('change', function () { localStorage.setItem('wfMockRename', rn.checked ? '1' : '0'); closeDlg(); load(); });
+  function load () { document.getElementById('card').src = '../index.html?mock&data=' + ds.value + (rn.checked ? '&rename' : ''); }
   ds.addEventListener('change', function () { localStorage.setItem('wfMockData', ds.value); closeDlg(); load(); });
   document.getElementById('reset').addEventListener('click', function () { localStorage.removeItem('wfMockSettings'); closeDlg(); load(); });
   document.getElementById('fmt').addEventListener('click', function () {

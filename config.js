@@ -114,10 +114,42 @@
       labelColor: '#17202B',
       fmt: fmtCopy(),
       dividers: true, // thin white line between segments
-      minPx: 12 // hide inside labels on segments shorter than this
+      minPx: 12, // hide inside labels on segments shorter than this
+      order: 'inherit' // segment + tooltip order: inherit (All bars setting) | see BREAKDOWN_ORDERS
     },
     group: '' // custom group id (Groups → Custom)
   };
+
+  /** Sort options for change bars and for breakdown segments. */
+  var BAR_SORTS = [['marks', 'Order on the Marks card'], ['valDesc', 'Value, high to low'], ['valAsc', 'Value, low to high'],
+    ['desc', 'Size, largest first'], ['asc', 'Size, smallest first']];
+  var BREAKDOWN_ORDERS = [['data', 'Default (as in the data)'], ['valDesc', 'Value, high to low'], ['valAsc', 'Value, low to high'],
+    ['desc', 'Size, largest first'], ['asc', 'Size, smallest first'], ['name', 'Name, A to Z'], ['nameDesc', 'Name, Z to A']];
+
+  /**
+   * Compare function for an order key, over items read by `val(x)` (number)
+   * and `name(x)` (string). Ties keep their original order (stable sort).
+   */
+  function comparer (order, val, name) {
+    var byName = function (a, b) { return String(name(a)).localeCompare(String(name(b)), undefined, { numeric: true, sensitivity: 'base' }); };
+    switch (order) {
+      case 'valDesc': return function (a, b) { return val(b) - val(a); };
+      case 'valAsc': return function (a, b) { return val(a) - val(b); };
+      case 'desc': return function (a, b) { return Math.abs(val(b)) - Math.abs(val(a)); };
+      case 'asc': return function (a, b) { return Math.abs(val(a)) - Math.abs(val(b)); };
+      case 'name': return byName;
+      case 'nameDesc': return function (a, b) { return byName(b, a); };
+      default: return null;
+    }
+  }
+
+  /** Stable sort of a copy of `list` (older browsers' sort isn't stable). */
+  function sortBy (list, cmp) {
+    if (!cmp) return list.slice();
+    return list.map(function (x, i) { return { x: x, i: i }; })
+      .sort(function (a, b) { return cmp(a.x, b.x) || a.i - b.i; })
+      .map(function (o) { return o.x; });
+  }
 
   var DEFAULTS = {
     icon: {
@@ -169,7 +201,9 @@
       endRadius: 3,
       posColor: '#0E7C66', // Increase (sign colour)
       negColor: '#B4431E', // Decrease
-      breakdownOrder: 'data', // data | desc | asc | name
+      breakdownOrder: 'data', // data | valDesc | valAsc | desc (size) | asc (size) | name | nameDesc
+      sort: 'marks', // order of the change bars: marks | valDesc | valAsc | desc (size) | asc (size)
+      sortScope: 'overall', // overall | groups (sort inside each group, groups stay in place)
       calcEnd: true, // End tile empty → End = Start + changes
       tooltip: true,
       rightClickMenu: true
@@ -178,6 +212,10 @@
     end: endBar(),
     stepDefaults: JSON.parse(JSON.stringify(STEP)), // used for steps you haven't styled
     steps: {}, // field key → STEP overrides
+
+    // Last seen field names on the Marks card (Changes, Breakdown), so a renamed
+    // pill keeps its settings. Written by the chart.
+    layout: { steps: [], dims: [] },
 
     // ---- Groups -----------------------------------------------------------
     groups: {
@@ -389,6 +427,8 @@
    *   opts.fv          Tableau's formatted value (Workbook format)
    *   opts.forceScale  reuse a K/M/B suffix (axis ticks share one)
    *   opts.noUnit      leave the unit off
+   *   opts.zeroSign    -1 / 1: sign of a signed value that is exactly 0 (the
+   *                    bar's direction). Values that round to 0 keep their own sign.
    */
   function formatNumber (v, f, opts) {
     opts = opts || {};
@@ -407,15 +447,16 @@
       var sc = f.scale === 'workbook' ? 'dynamic' : f.scale;
       body = formatScaled(a, sc, f.decimals, opts.forceScale);
     }
-    // A value that rounds to zero carries no sign.
+    // A value that rounds to zero: changes (signed) show the bar's sign
+    // (+0.0 / −0.0); other numbers carry no sign.
     var isZero = !/[1-9]/.test(body);
-    if (isZero) neg = false;
+    if (isZero) neg = opts.signed ? (v < 0 || (v === 0 && opts.zeroSign < 0)) : false;
     if (!opts.noUnit && f.unit) body = f.unitPosition === 'prefix' ? f.unit + ' ' + body : body + ' ' + f.unit;
     if (neg) {
       if (f.negStyle === 'paren') return '(' + body + ')';
       return (f.negStyle === 'hyphen' ? '-' : '−') + body;
     }
-    if (opts.signed && f.plusSign && !isZero) return '+' + body;
+    if (opts.signed && f.plusSign) return '+' + body;
     return body;
   }
 
@@ -477,6 +518,10 @@
     DEFAULTS: DEFAULTS,
     STEP: STEP,
     FORMAT: FORMAT,
+    BAR_SORTS: BAR_SORTS,
+    BREAKDOWN_ORDERS: BREAKDOWN_ORDERS,
+    comparer: comparer,
+    sortBy: sortBy,
     FONTS: FONTS,
     ICONS: ICONS,
     ICON_GROUPS: ICON_GROUPS,

@@ -132,7 +132,7 @@
     var upd = function () {
       var f = get(base);
       sample.textContent = 'Preview: ' + Wf.formatNumber(1284500, f) + '   ' + Wf.formatNumber(262100, f, { signed: true }) +
-        '   ' + Wf.formatNumber(-45200, f, { signed: true });
+        '   ' + Wf.formatNumber(-45200, f, { signed: true }) + '   ' + Wf.formatNumber(0, f, { signed: true, zeroSign: -1 });
     };
     upd();
     g.addEventListener('input', upd);
@@ -244,6 +244,10 @@
       g4.appendChild(checkboxRow('Show breakdown', P(base, 'breakdown.show'), rebuild));
       if (s.breakdown.show && info.dims.length) dimPicker(g4, base, s);
       if (s.breakdown.show) {
+        var allOrder = (Wf.BREAKDOWN_ORDERS.find(function (o) { return o[0] === cfg.bars.breakdownOrder; }) || ['', ''])[1];
+        g4.appendChild(selectRow('Segment order', P(base, 'breakdown.order'),
+          [['inherit', 'Same as All bars (' + allOrder.replace(/ \(.*\)$/, '') + ')']].concat(Wf.BREAKDOWN_ORDERS)));
+        g4.appendChild(help('Order of the segments in the bar (from the bar’s start) and of the rows in the tooltip.'));
         g4.appendChild(segRow('Colors', P(base, 'breakdown.colorMode'), [['shades', 'Shades of bar colour'], ['custom', 'Custom']], rebuild));
         if (s.breakdown.colorMode === 'custom') {
           var members = memberList(s.breakdown);
@@ -298,6 +302,20 @@
       g6.appendChild(h('div', { className: 'inline' }, [copyBtn, resetBtn]));
     }
 
+    // ---- order of the change bars ------------------------------------------
+    var gs = group(p, 'Order of the changes');
+    gs.appendChild(selectRow('Sort changes', 'bars.sort', Wf.BAR_SORTS, null, rebuild));
+    if (cfg.bars.sort !== 'marks') {
+      gs.appendChild(segRow('Sort', 'bars.sortScope', [['overall', 'All changes together'], ['groups', 'Within each group']], rebuild));
+      gs.appendChild(help(cfg.bars.sortScope === 'groups'
+        ? (cfg.groups.mode === 'none'
+          ? 'Groups are off (Groups tab), so all changes are sorted together.'
+          : 'Each group keeps its place; the bars inside it are sorted. Bars outside any group are sorted among their neighbours.')
+        : 'Start and End stay first and last. With Increases / decreases groups, the groups follow the new order.'));
+    } else {
+      gs.appendChild(help('The order of the pills on the Changes tile. Start and End always stay first and last.'));
+    }
+
     // ---- all bars -----------------------------------------------------------
     var g7 = group(p, 'All bars');
     g7.appendChild(rangeRow('Bar width', 'bars.width', 10, 100, 1, '%'));
@@ -305,7 +323,8 @@
     g7.appendChild(numberRow('Start/End radius', 'bars.endRadius', 0, 20, 1));
     g7.appendChild(colorRow('Increase color', 'bars.posColor'));
     g7.appendChild(colorRow('Decrease color', 'bars.negColor'));
-    g7.appendChild(selectRow('Breakdown order', 'bars.breakdownOrder', [['data', 'As in the data'], ['desc', 'Largest first'], ['asc', 'Smallest first'], ['name', 'By name']]));
+    g7.appendChild(selectRow('Breakdown order', 'bars.breakdownOrder', Wf.BREAKDOWN_ORDERS, null, rebuild));
+    g7.appendChild(help('Segment and tooltip order for every bar whose own Segment order is “Same as All bars”. Value sorts by the signed amount, Size by the amount without its sign.'));
     g7.appendChild(checkboxRow('Calculate End if empty', 'bars.calcEnd'));
     g7.appendChild(help('With nothing on the End tile, End = Start + changes.'));
     g7.appendChild(checkboxRow('Tooltip on hover', 'bars.tooltip'));
@@ -860,7 +879,7 @@
     return r;
   }
 
-  function selectRow (label, path, options, help) {
+  function selectRow (label, path, options, help, after) {
     var r = row(label);
     var sel = h('select');
     options.forEach(function (o) { sel.appendChild(h('option', { value: String(o[0]), textContent: o[1] })); });
@@ -868,6 +887,7 @@
     sel.addEventListener('change', function () {
       var orig = options.find(function (o) { return String(o[0]) === sel.value; })[0];
       set(path, orig);
+      if (after) after();
     });
     r.appendChild(sel);
     if (help) { var frag = document.createDocumentFragment(); frag.append(r, h('div', { className: 'help', textContent: help })); return wrapRows(frag); }

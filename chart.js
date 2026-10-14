@@ -841,9 +841,15 @@
     return Wf.sortBy(b.segs, Wf.comparer(o, function (x) { return x.v; }, function (x) { return x.member; }));
   }
 
+  /**
+   * Segment colours. Shades follow the bar's breakdown order: the first
+   * segment gets the bar colour, the last the palest shade. Custom colours
+   * stay as picked.
+   */
   function segColors (b) {
     var bd = b.s.breakdown;
-    var list = b.members || [];
+    var shown = orderedSegs(b).map(function (sg) { return sg.member; });
+    var list = shown;
     var all = Wf.shades(b.color, Math.max(1, list.length));
     var map = {};
     list.forEach(function (m, i) {

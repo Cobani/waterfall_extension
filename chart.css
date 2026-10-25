@@ -123,11 +123,13 @@ body {
 
 .tt-name { color: #68707d; margin-bottom: 2px; }
 .tt-value { font-weight: 700; font-size: 14px; }
-.tt-note { color: #68707d; font-size: 11px; }
+/* Long text (bar names, notes) wraps inside the tooltip's max width; value rows stay on one line. */
+.tt-name, .tt-note { white-space: normal; overflow-wrap: anywhere; }
+.tt-note { color: #68707d; font-size: 11px; margin-top: 2px; }
 .tt-rows { margin-top: 6px; border-top: 1px solid #eef0f2; padding-top: 5px; }
 .tt-row { display: flex; align-items: center; gap: 6px; }
 .tt-row .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-.tt-row .nm { flex: 1; color: #55606e; overflow: hidden; text-overflow: ellipsis; }
+.tt-row .nm { flex: 1; min-width: 0; color: #55606e; overflow: hidden; text-overflow: ellipsis; }
 .tt-row .vl { font-weight: 600; }
 
 /* ---- Right-click menu ------------------------------------------------- */

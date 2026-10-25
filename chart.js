@@ -92,7 +92,8 @@
       hasBreakdown: !!(model && model.dims.length)
     });
     var options = { width: 600, height: 760 };
-    if (tableau.DialogStyle && tableau.DialogStyle.Modeless) options.dialogStyle = tableau.DialogStyle.Modeless;
+    // Modal keeps the Format window in front of Tableau until Done; the chart behind it still updates live.
+    if (tableau.DialogStyle && tableau.DialogStyle.Modal) options.dialogStyle = tableau.DialogStyle.Modal;
     return tableau.extensions.ui.displayDialogAsync(url, payload, options).catch(function (err) {
       var closed = tableau.ErrorCodes && err && err.errorCode === tableau.ErrorCodes.DialogClosedByUser;
       if (!closed) console.warn('Waterfall dialog:', err && err.message);

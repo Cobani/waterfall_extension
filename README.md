@@ -38,6 +38,11 @@ balance flow, a breakdown dimension, raw SAR values, negative values; the breakd
 
 - Change bars float from the running total. Start and End bars stand on the axis.
 - If End doesn't equal Start + changes, the End tooltip shows the difference.
+- **Start and End ignore the Breakdown** (Bars → All bars): by default Start and End are added up over the Breakdown
+  members, like the changes. If they come from FIXED / EXCLUDE calculations (or anything else that repeats the same
+  total on every row), that multiplies them by the number of members. Tick this option to take the value once. If the
+  members disagree, the most common value is shown and the tooltip says so; make that measure with
+  `{ EXCLUDE [Breakdown fields] : SUM([Balance]) }`. Dev preview: *Breakdown, balances repeat per row (LOD)*.
 - If outflows are stored as positive amounts, tick **Invert sign** for those bars.
 - A change of exactly 0 is written with its bar's sign: **+0.0**, or **−0.0** when *Invert sign* is ticked (it also takes the Decrease colour and joins the decreases group). A change that only rounds to zero keeps its own sign.
 - If Tableau delivers the changes as *Measure Names / Measure Values*, the extension pivots them back. Nothing to do.

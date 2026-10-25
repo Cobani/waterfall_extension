@@ -205,6 +205,7 @@
       sort: 'marks', // order of the change bars: marks | valDesc | valAsc | desc (size) | asc (size)
       sortScope: 'overall', // overall | groups (sort inside each group, groups stay in place)
       calcEnd: true, // End tile empty → End = Start + changes
+      balanceIgnoreBreakdown: false, // Start / End: take the value once instead of summing it over the Breakdown members
       tooltip: true,
       rightClickMenu: true
     },

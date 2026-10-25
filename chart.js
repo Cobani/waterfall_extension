@@ -402,13 +402,28 @@
         m.total += v;
         m.n++;
         m.fv = m.n === 1 ? cell.formattedValue : null;
+        if (m.n === 1) m.fv1 = cell.formattedValue;
         if (cBrk.length) m.per[ck] = (m.per[ck] || 0) + v;
       });
     });
 
+    /**
+     * Start / End with a Breakdown: the value once, not summed over the
+     * Breakdown members (for LOD / non-additive measures that repeat on every
+     * row). The most common value; `varies` when the members disagree.
+     */
+    function once (m) {
+      if (!cBrk.length || m.kind === 'step' || !m.n) return null;
+      var count = {};
+      Object.keys(m.per).forEach(function (k) { var v = m.per[k]; count[v] = (count[v] || 0) + 1; });
+      var vals = Object.keys(count).map(Number);
+      vals.sort(function (a, b) { return count[b] - count[a] || Math.abs(b) - Math.abs(a); });
+      return { raw: vals[0], fv: vals.length === 1 ? m.fv1 : null, varies: vals.length > 1 };
+    }
+
     function bar (m) {
       return {
-        key: m.key, kind: m.kind, name: m.name, raw: m.total, fv: m.fv, found: m.n > 0,
+        key: m.key, kind: m.kind, name: m.name, raw: m.total, fv: m.fv, found: m.n > 0, once: once(m),
         // one row per Breakdown combination: { c: combo index, raw }
         rows: cBrk.length ? Object.keys(m.per).map(function (k) { return { c: comboSeen[k] - 1, raw: m.per[k] }; }) : []
       };
@@ -531,10 +546,13 @@
   function allBars () {
     var out = [];
     var level = 0;
-    if (model.start) {
+    var startBar = balanceBar(model.start);
+    if (startBar) {
       var s = cfg.start;
-      level = model.start.raw;
-      out.push(decorate(model.start, s, 0, model.start.raw, model.start.raw, s.color));
+      level = startBar.raw;
+      var b1 = decorate(startBar, s, 0, startBar.raw, startBar.raw, s.color);
+      b1.varies = startBar.varies;
+      out.push(b1);
     }
     sortedSteps().forEach(function (it) {
       var st = it.st;
@@ -548,7 +566,7 @@
       level += v;
       out.push(b);
     });
-    var endBar = model.end;
+    var endBar = balanceBar(model.end);
     var calculated = false;
     if (!endBar && cfg.bars.calcEnd && (model.start || model.steps.length)) {
       endBar = { key: '__end', kind: 'end', name: 'End', raw: level, fv: null, rows: [] };
@@ -557,10 +575,25 @@
     if (endBar) {
       var b2 = decorate(endBar, cfg.end, 0, endBar.raw, endBar.raw, cfg.end.color);
       b2.calculated = calculated;
+      b2.varies = endBar.varies;
       b2.expected = level;
       out.push(b2);
     }
     return out;
+  }
+
+  /**
+   * Start / End as drawn. With "Start and End ignore the Breakdown" on, the
+   * value is taken once instead of summed over the Breakdown members.
+   */
+  function balanceBar (src) {
+    if (!src || !cfg.bars.balanceIgnoreBreakdown || !src.once) return src;
+    var o = {};
+    Object.keys(src).forEach(function (k) { o[k] = src[k]; });
+    o.raw = src.once.raw;
+    o.fv = src.once.fv;
+    o.varies = src.once.varies;
+    return o;
   }
 
   /**
@@ -1240,6 +1273,9 @@
       esc(Wf.formatNumber(b.v, f, { signed: b.kind === 'step', fv: b.fv, zeroSign: b.neg ? -1 : 1 })) + '</div>';
     if (b.kind === 'step') {
       html += '<div class="tt-note">' + esc(Wf.formatNumber(b.from, f)) + ' → ' + esc(Wf.formatNumber(b.to, f)) + '</div>';
+    }
+    if (b.varies) {
+      html += '<div class="tt-note">Differs between Breakdown members; showing the most common value. Use an EXCLUDE / FIXED calculation for this measure.</div>';
     }
     if (b.kind === 'end' && b.calculated) {
       html += '<div class="tt-note">Calculated: Start + changes</div>';

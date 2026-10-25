@@ -6,7 +6,8 @@
  *
  * - Settings live in localStorage, so the chart and the Format dialog (two
  *   frames) see each other's changes, like they do inside Tableau.
- * - Sample data: ?data=figma | breakdown | negative | raw | zero
+ * - Sample data: ?data=figma | breakdown | breakdownLod | negative | raw | zero
+ *   (breakdownLod: Start / End repeat on every row, like a FIXED / EXCLUDE balance)
  * - ?rename: the first change and the first Breakdown pill are "renamed"
  *   (double-click → //New name): the Marks card reports new names and the
  *   data columns other names, as Tableau does for inline calculations.
@@ -44,6 +45,7 @@
         [['Current', 'Retail'], ['Current', 'SME'], ['Ehsan', 'Retail'], ['Musaned', 'Retail'], ['Savings', 'Retail'], ['Savings', 'SME']],
         [0.4, 0.15, 0.15, 0.1, 0.12, 0.08]]
     },
+    breakdownLod: null, // set below: breakdown with balances repeated per row
     zero: {
       def: {
         start: ['SUM(Opening Balance)', 100],
@@ -59,6 +61,8 @@
       }
     }
   };
+
+  DATASETS.breakdownLod = { def: DATASETS.breakdown.def, breakdown: DATASETS.breakdown.breakdown, repeatBalances: true };
 
   var dsName = params.get('data') || localStorage.getItem(DS_KEY) || 'figma';
   var DS = DATASETS[dsName] || DATASETS.figma;
@@ -96,7 +100,8 @@
           // vary the split a little per measure so segments differ
           var w = bd[2][mi] * (1 + 0.25 * Math.sin(j * 1.7 + mi));
           var tot = bd[2].reduce(function (s, x, q) { return s + x * (1 + 0.25 * Math.sin(j * 1.7 + q)); }, 0);
-          row.push(cell(ms[1] * k * w / tot));
+          var whole = DS.repeatBalances && (j === 0 || j === measures.length - 1);
+          row.push(cell(whole ? ms[1] * k : ms[1] * k * w / tot));
         });
         data.push(row);
       });

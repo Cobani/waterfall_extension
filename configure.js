@@ -325,6 +325,8 @@
     g7.appendChild(colorRow('Decrease color', 'bars.negColor'));
     g7.appendChild(selectRow('Breakdown order', 'bars.breakdownOrder', Wf.BREAKDOWN_ORDERS, null, rebuild));
     g7.appendChild(help('Segment and tooltip order for every bar whose own Segment order is “Same as All bars”. Value sorts by the signed amount, Size by the amount without its sign.'));
+    g7.appendChild(checkboxRow('Start and End ignore the Breakdown', 'bars.balanceIgnoreBreakdown'));
+    g7.appendChild(help('On: Start and End take their value once instead of adding it up over the Breakdown members. Use it when they go wrong after adding a Breakdown dimension, e.g. balances from FIXED / EXCLUDE calculations or other values that repeat on every row. For a measure that really changes per member, make it with { EXCLUDE [your Breakdown fields] : SUM([Balance]) }.'));
     g7.appendChild(checkboxRow('Calculate End if empty', 'bars.calcEnd'));
     g7.appendChild(help('With nothing on the End tile, End = Start + changes.'));
     g7.appendChild(checkboxRow('Tooltip on hover', 'bars.tooltip'));

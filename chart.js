@@ -31,6 +31,7 @@
     ['card', 'icon', 'title', 'explanation', 'plot', 'svg', 'hint', 'tooltip', 'menu'].forEach(function (id) {
       el[id] = document.getElementById(id);
     });
+    ChartExport.attach(el.card, 'Waterfall');
 
     el.svg.addEventListener('mousemove', onHover);
     el.svg.addEventListener('mouseleave', hideTooltip);
@@ -239,6 +240,8 @@
       if (table && table.error) throw table.error;
 
       model = extract(table, fields);
+
+      ChartExport.setTable(table);
       reconcileKeys();
       await fetchBalances(token);
       if (token !== renderToken) return;
@@ -734,6 +737,7 @@
   // Paint
   // ---------------------------------------------------------------------------
   function paint () {
+    if (cfg && window.ChartExport) ChartExport.refresh(cfg);
     if (!cfg) return;
     if (!model) return;
     var bars = allBars();

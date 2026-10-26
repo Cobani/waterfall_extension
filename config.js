@@ -178,6 +178,10 @@
       color: '#68707D',
       italic: true
     },
+    export: {
+      button: 'hover', // hover | always | never
+      fileName: '' // empty → the title
+    },
     card: {
       padding: 15,
       bgColor: '#FFFFFF',

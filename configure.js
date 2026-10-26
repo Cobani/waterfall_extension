@@ -29,6 +29,7 @@
     { id: 'axes', label: 'Axes', build: buildAxesTab, keys: ['axisY', 'axisX'] },
     { id: 'lines', label: 'Lines', build: buildLinesTab, keys: ['lines'] },
     { id: 'numbers', label: 'Numbers', build: buildNumbersTab, keys: ['numbers', 'format'] },
+    { id: 'export', label: 'Export', build: buildExportTab, keys: ['export'] },
     { id: 'card', label: 'Card', build: buildCardTab, keys: ['card'] }
   ];
 
@@ -593,6 +594,18 @@
     var g3 = group(p, 'Chart text');
     g3.appendChild(fontFamilyRow('Font', 'numbers.font'));
     g3.appendChild(help('Font of bar values, breakdown values and group labels. Axis fonts are on the Axes tab; the vertical axis has its own number format there.'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Export tab
+  // ---------------------------------------------------------------------------
+  function buildExportTab (p) {
+    var g1 = group(p, 'Export button');
+    g1.appendChild(segRow('Show', 'export.button', [['hover', 'On hover'], ['always', 'Always'], ['never', 'Never']]));
+    g1.appendChild(help('The button at the top right downloads the chart’s data as Excel or CSV, or copies it to paste into Excel.'));
+    var g2 = group(p, 'Files');
+    g2.appendChild(textRow('File name', 'export.fileName', 'Empty = the title'));
+    g2.appendChild(help('Today’s date is added, e.g. “Transfers 2026-10-20.xlsx”. Tableau Desktop can block downloads from extensions; then use Copy data. Tableau Server and Cloud in a browser download normally.'));
   }
 
   function buildCardTab (p) {

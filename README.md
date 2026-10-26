@@ -40,7 +40,10 @@ balance flow, a breakdown dimension, raw SAR values, negative values; the breakd
 - If End doesn't equal Start + changes, the End tooltip shows the difference.
 - **Start and End ignore the Breakdown** (Bars → All bars): by default Start and End are added up over the Breakdown
   members, like the changes. If they come from FIXED / EXCLUDE calculations (or anything else that repeats the same
-  total on every row), that multiplies them by the number of members. Tick this option to take the value once. If the
+  total on every row), that multiplies them by the number of members. Tick this option and the chart first asks
+  Tableau for only the Start / End columns; if Tableau returns them as one row (aggregated without the Breakdown), that
+  exact value is used — the same as with no Breakdown on the Marks card. The console says which way it went
+  (*Start/End without the Breakdown: N row(s)*). Otherwise the value is taken once. If the
   members disagree, the most common value is shown and the tooltip says so; make that measure with
   `{ EXCLUDE [Breakdown fields] : SUM([Balance]) }`. Dev preview: *Breakdown, balances repeat per row (LOD)*.
 - If outflows are stored as positive amounts, tick **Invert sign** for those bars.
@@ -87,7 +90,7 @@ settings and its breakdown: the chart remembers the pill names it last saw, and 
 appears in the same place is treated as a rename. The data column is then found by position when Tableau reports it
 under another name (the console logs *matched renamed fields by position*). Replacing a pill with a different field
 in the same place counts as a rename too, so it keeps that slot's settings; use *Reset this bar* to start fresh.
-This protection starts once the chart has loaded in authoring mode with this version (it saves the pill names then).
+The pill names are remembered in the browser (localStorage, per worksheet), not in the workbook, because writing workbook settings makes Tableau reload the extension; the workbook is only saved when settings actually move to a new name. Rename pills on the same machine the chart was last opened on.
 
 1. The Tableau Extensions API library is bundled in `lib/tableau.extensions.1.17.0.min.js` (no CDN). To upgrade, replace that file and update the `<script>` path in `index.html` and `configure.html`.
 2. Host the folder over HTTPS and change `<source-location><url>` in `waterfall.trex`.

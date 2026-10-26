@@ -8,6 +8,8 @@
  *   frames) see each other's changes, like they do inside Tableau.
  * - Sample data: ?data=figma | breakdown | breakdownLod | negative | raw | zero
  *   (breakdownLod: Start / End repeat on every row, like a FIXED / EXCLUDE balance)
+ * - Start/End read with columnsToIncludeById come back as one row of totals
+ *   (?keepLod: every row, i.e. Tableau keeps the Breakdown).
  * - ?rename: the first change and the first Breakdown pill are "renamed"
  *   (double-click → //New name): the Marks card reports new names and the
  *   data columns other names, as Tableau does for inline calculations.
@@ -174,8 +176,23 @@
           getVisualSpecificationAsync: function () {
             return Promise.resolve({ activeMarksSpecificationIndex: 0, marksSpecifications: [{ encodings: encodings() }] });
           },
-          getSummaryDataReaderAsync: function () {
+          getSummaryDataReaderAsync: function (n, opts) {
             var t = buildTable();
+            var ids = opts && opts.columnsToIncludeById;
+            if (ids && ids.length) {
+              // Only some columns: like Tableau, aggregate them without the dimensions
+              // (one row of totals). ?keepLod simulates Tableau keeping every row.
+              var cols = t.columns.filter(function (c) { return ids.indexOf(c.fieldId) >= 0; });
+              var d = DS.def;
+              var all = [d.start].concat(d.steps, [d.end]);
+              var rowsOut = /[?&]keepLod\b/.test(location.search)
+                ? t.data.map(function (r) { return cols.map(function (c) { return r[c.index]; }); })
+                : [cols.map(function (c) {
+                  var ms = all.find(function (x) { return '[' + x[0] + ']' === c.fieldId; });
+                  return cell(ms ? ms[1] * (DS.scale || 1) : NaN);
+                })];
+              t = { columns: cols.map(function (c, i) { return Object.assign({}, c, { index: i }); }), data: rowsOut };
+            }
             return Promise.resolve({
               getAllPagesAsync: function () { return Promise.resolve(t); },
               releaseAsync: function () { return Promise.resolve(); }

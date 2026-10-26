@@ -53,7 +53,13 @@
       worksheet.addEventListener(tableau.TableauEventType.SummaryDataChanged, refresh);
       tableau.extensions.settings.addEventListener(
         tableau.TableauEventType.SettingsChanged,
-        function () { cfg = Wf.read(); reconcileKeys(); paint(); }
+        function () {
+          cfg = Wf.read();
+          reconcileKeys();
+          // Just switched on "ignore the Breakdown": fetch Start / End without it.
+          if (cfg.bars.balanceIgnoreBreakdown && model && model.balanceCols && !model.balanceTried) refresh();
+          else paint();
+        }
       );
 
       if (window.ResizeObserver) {
@@ -155,7 +161,8 @@
   function writeCache (fields, data) {
     try {
       var s = JSON.stringify({ sig: fieldsSig(fields), t: Date.now(), data: data }, enc);
-      if (s.length > CACHE_MAX_CHARS) return;
+      // Too big to keep: drop the old entry too, so a stale drawing isn't shown on the next load.
+      if (s.length > CACHE_MAX_CHARS) { clearCache(); return; }
       try {
         window.localStorage.setItem(cacheKey(), s);
       } catch (full) {
@@ -233,6 +240,8 @@
 
       model = extract(table, fields);
       reconcileKeys();
+      await fetchBalances(token);
+      if (token !== renderToken) return;
       var tp = performance.now();
       paint();
       if (first) {
@@ -261,8 +270,42 @@
     return fields;
   }
 
-  async function readSummaryData () {
-    var reader = await worksheet.getSummaryDataReaderAsync(undefined, { ignoreSelection: true });
+  /**
+   * "Start and End ignore the Breakdown": ask Tableau for only the Start / End
+   * columns. If Tableau aggregates them without the Breakdown dimensions (one
+   * row), that's the exact value, the same as with no Breakdown on the Marks
+   * card. Otherwise the value-once rule in extract() is used.
+   */
+  async function fetchBalances (token) {
+    var bc = model && model.balanceCols;
+    if (!bc || !cfg.bars.balanceIgnoreBreakdown) return;
+    model.balanceTried = true;
+    var ids = [bc.start, bc.end].filter(Boolean);
+    if (!ids.length) return;
+    try {
+      var t = await readSummaryData({ columnsToIncludeById: ids });
+      if (token !== renderToken) return;
+      var rows = (t && t.data) || [];
+      console.info('Waterfall: Start/End without the Breakdown: ' + rows.length + ' row(s)' +
+        (rows.length === 1 ? ' — using it.' : ' — Tableau kept the Breakdown, using the value-once rule.'));
+      if (rows.length !== 1) return;
+      ['start', 'end'].forEach(function (k) {
+        if (!bc[k] || !model[k]) return;
+        var col = t.columns.find(function (c) { return c.fieldId === bc[k]; });
+        if (!col) return;
+        var cell = rows[0][col.index];
+        var v = toNumber(cell);
+        if (isFinite(v)) model[k].once = { raw: v, fv: cell.formattedValue, varies: false, exact: true };
+      });
+    } catch (e) {
+      console.info('Waterfall: Start/End without the Breakdown not available:', e && e.message);
+    }
+  }
+
+  async function readSummaryData (extra) {
+    var opts = { ignoreSelection: true };
+    if (extra) Object.keys(extra).forEach(function (k) { opts[k] = extra[k]; });
+    var reader = await worksheet.getSummaryDataReaderAsync(undefined, opts);
     try {
       return await reader.getAllPagesAsync();
     } finally {
@@ -435,9 +478,15 @@
       steps: ms.filter(function (m) { return m.kind === 'step'; }).map(bar),
       end: ms.filter(function (m) { return m.kind === 'end'; }).map(bar)[0] || null,
       dims: fBrk.map(function (f) { return { key: f.name, name: cleanName(f.name) }; }),
+      dimKeys: fields.breakdown.map(function (f) { return f.name; }), // every Breakdown pill, matched or not
       combos: combos,
       members: combos.map(function (c) { return c.join(' \u00b7 '); }),
-      missing: ms.filter(function (m) { return !m.n; }).map(function (m) { return m.name; })
+      missing: ms.filter(function (m) { return !m.n; }).map(function (m) { return m.name; }),
+      // Start / End column ids, for reading them without the Breakdown (fetchBalances)
+      balanceCols: cBrk.length && !(cMN && cMV) ? {
+        start: (ms.find(function (m) { return m.kind === 'start' && m.col; }) || { col: {} }).col.fieldId || null,
+        end: (ms.find(function (m) { return m.kind === 'end' && m.col; }) || { col: {} }).col.fieldId || null
+      } : null
     };
   }
 
@@ -463,15 +512,42 @@
     return out;
   }
 
-  /** Applies renames to cfg (in memory) and saves when anything changed. */
+  // The last seen layout is kept in this browser (localStorage), not in the
+  // workbook: writing workbook settings makes Tableau reload the extension,
+  // so saving it on every refresh made the chart reload over and over.
+  // The workbook is only written when settings really move to a new name.
+  var LAYOUT_PREFIX = 'waterfall:layout:v1:';
+
+  function layoutKey () {
+    var host = '';
+    try { host = document.referrer ? new URL(document.referrer).origin : ''; } catch (e) { /* ignore */ }
+    return LAYOUT_PREFIX + host + '|' + (worksheet && worksheet.name);
+  }
+
+  function readLayout () {
+    try {
+      var l = JSON.parse(window.localStorage.getItem(layoutKey()) || 'null');
+      if (l && Array.isArray(l.steps) && Array.isArray(l.dims)) return l;
+    } catch (e) { /* ignore */ }
+    // Layout saved in the workbook by the previous version.
+    var c = cfg && cfg.layout;
+    return c && Array.isArray(c.steps) && c.steps.length ? c : null;
+  }
+
+  function writeLayout (l) {
+    try { window.localStorage.setItem(layoutKey(), JSON.stringify(l)); } catch (e) { /* ignore */ }
+  }
+
+  /** Applies renames to cfg (in memory); saves the workbook only when settings moved. */
   function reconcileKeys () {
-    if (!cfg || !model || !model.dims) return;
+    if (!cfg || !model || !model.steps) return;
     var cur = {
       steps: model.steps.map(function (st) { return st.key; }),
-      dims: model.dims.map(function (d) { return d.key; })
+      dims: model.dimKeys || (model.dims || []).map(function (d) { return d.key; })
     };
-    var prev = cfg.layout || { steps: [], dims: [] };
-    var dirty = false;
+    var stored = readLayout();
+    var prev = stored || cur;
+    var moved = false;
 
     var rs = renames(prev.steps, cur.steps);
     Object.keys(rs).forEach(function (oldK) {
@@ -479,7 +555,7 @@
       if (cfg.steps[oldK] && !cfg.steps[newK]) {
         cfg.steps[newK] = cfg.steps[oldK];
         delete cfg.steps[oldK];
-        dirty = true;
+        moved = true;
       }
     });
 
@@ -488,15 +564,26 @@
       [cfg.stepDefaults].concat(Object.keys(cfg.steps).map(function (k) { return cfg.steps[k]; })).forEach(function (sc) {
         var bd = sc && sc.breakdown;
         if (!bd || !Array.isArray(bd.dims)) return;
-        bd.dims = bd.dims.map(function (k) { if (rd[k]) { dirty = true; return rd[k]; } return k; });
+        bd.dims = bd.dims.map(function (k) { if (rd[k]) { moved = true; return rd[k]; } return k; });
       });
     }
 
-    if (JSON.stringify(prev) !== JSON.stringify(cur)) { cfg.layout = cur; dirty = true; }
-    if (dirty) {
+    if (!stored || JSON.stringify(stored) !== JSON.stringify(cur)) writeLayout(cur);
+    if (moved && !recentlySaved(JSON.stringify([rs, rd]))) {
       // Saving only works while authoring; viewers still get the renames in memory.
       try { Wf.write(cfg).catch(function () { /* read-only */ }); } catch (e) { /* read-only */ }
     }
+  }
+
+  /** True if the same rename was already saved in the last minute (never save in a loop). */
+  function recentlySaved (sig) {
+    try {
+      var k = 'waterfall:renameSaved';
+      var last = JSON.parse(window.sessionStorage.getItem(k) || 'null');
+      if (last && last.sig === sig && Date.now() - last.t < 60000) return true;
+      window.sessionStorage.setItem(k, JSON.stringify({ sig: sig, t: Date.now() }));
+    } catch (e) { /* ignore */ }
+    return false;
   }
 
   /**

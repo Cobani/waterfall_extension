@@ -31,7 +31,6 @@
     ['card', 'icon', 'title', 'explanation', 'plot', 'svg', 'hint', 'tooltip', 'menu'].forEach(function (id) {
       el[id] = document.getElementById(id);
     });
-    ChartExport.attach(el.card, 'Waterfall');
 
     el.svg.addEventListener('mousemove', onHover);
     el.svg.addEventListener('mouseleave', hideTooltip);
@@ -93,7 +92,10 @@
       (/[?&]mock\b/.test(location.search) ? '?mock' : '');
     var payload = JSON.stringify({
       focus: focus || null,
-      bars: model ? allBars().map(function (b) { return { key: b.key, kind: b.kind, name: b.name, sign: b.neg || b.v < 0 ? -1 : 1 }; }) : [],
+      bars: model ? allBars().map(function (b) {
+        // rows: the step's value per Breakdown combination, so the dialog can list the top members + Others
+        return { key: b.key, kind: b.kind, name: b.name, sign: b.neg || b.v < 0 ? -1 : 1, rows: b.rows || [] };
+      }) : [],
       dims: model ? model.dims : [],
       combos: model ? model.combos : [],
       hasBreakdown: !!(model && model.dims.length)
@@ -240,8 +242,6 @@
       if (table && table.error) throw table.error;
 
       model = extract(table, fields);
-
-      ChartExport.setTable(table);
       reconcileKeys();
       await fetchBalances(token);
       if (token !== renderToken) return;
@@ -625,8 +625,8 @@
       var n = memberName(model.combos[r.c], order, sc.breakdown.sep);
       sums[n] = (sums[n] || 0) + (sc.invert ? -r.raw : r.raw);
     });
-    return memberList(order, sc.breakdown.sep).filter(function (n) { return n in sums; })
-      .map(function (n) { return { member: n, v: sums[n] }; });
+    return Wf.topSegments(memberList(order, sc.breakdown.sep).filter(function (n) { return n in sums; })
+      .map(function (n) { return { member: n, v: sums[n] }; }));
   }
 
   // ---------------------------------------------------------------------------
@@ -653,7 +653,8 @@
       var b = decorate(st, sc, level, level + v, v, color);
       b.neg = it.neg;
       b.segs = stepSegs(st, sc);
-      b.members = st.rows.length ? memberList(dimOrder(sc.breakdown), sc.breakdown.sep) : [];
+      b.members = b.segs.map(function (sg) { return sg.member; });
+      b.rows = st.rows;
       level += v;
       out.push(b);
     });
@@ -737,7 +738,6 @@
   // Paint
   // ---------------------------------------------------------------------------
   function paint () {
-    if (cfg && window.ChartExport) ChartExport.refresh(cfg);
     if (!cfg) return;
     if (!model) return;
     var bars = allBars();
@@ -963,7 +963,10 @@
   function orderedSegs (b) {
     var own = b.s.breakdown && b.s.breakdown.order;
     var o = own && own !== 'inherit' ? own : cfg.bars.breakdownOrder;
-    return Wf.sortBy(b.segs, Wf.comparer(o, function (x) { return x.v; }, function (x) { return x.member; }));
+    // "Others" (the members past the top ones) always comes last.
+    var top = b.segs.filter(function (x) { return !x.others; });
+    var rest = b.segs.filter(function (x) { return x.others; });
+    return Wf.sortBy(top, Wf.comparer(o, function (x) { return x.v; }, function (x) { return x.member; })).concat(rest);
   }
 
   /**
@@ -1380,7 +1383,7 @@
       var bf = fmtOf(b.s.breakdown.fmt);
       html += '<div class="tt-rows">' + orderedSegs(b).map(function (s) {
         return '<div class="tt-row"><span class="sw" style="background:' + colors[s.member] + '"></span><span class="nm">' +
-          esc(s.member) + '</span><span class="vl">' + esc(Wf.formatNumber(s.v, bf, { signed: true, zeroSign: b.neg ? -1 : 1 })) + '</span></div>';
+          esc(s.others ? s.member + ' (' + s.count + ')' : s.member) + '</span><span class="vl">' + esc(Wf.formatNumber(s.v, bf, { signed: true, zeroSign: b.neg ? -1 : 1 })) + '</span></div>';
       }).join('') + '</div>';
     }
     var tt = el.tooltip;

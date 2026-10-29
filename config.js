@@ -178,10 +178,6 @@
       color: '#68707D',
       italic: true
     },
-    export: {
-      button: 'hover', // hover | always | never
-      fileName: '' // empty → the title
-    },
     card: {
       padding: 15,
       bgColor: '#FFFFFF',
@@ -511,6 +507,30 @@
     return out;
   }
 
+  /**
+   * Top breakdown segments: with more than TOP_SEGMENTS members, the largest
+   * TOP_SEGMENTS (by size) stay in their order and the rest are summed into
+   * one "Others" segment, always last. segs: [{ member, v }].
+   */
+  var TOP_SEGMENTS = 10;
+  var OTHERS = 'Others';
+  function topSegments (segs) {
+    if (!segs || segs.length <= TOP_SEGMENTS) return segs || [];
+    var keep = {};
+    segs.map(function (sg, i) { return { a: Math.abs(sg.v), i: i }; })
+      .sort(function (a, b) { return b.a - a.a || a.i - b.i; })
+      .slice(0, TOP_SEGMENTS)
+      .forEach(function (x) { keep[x.i] = 1; });
+    var out = [];
+    var rest = { member: OTHERS, v: 0, others: true, count: 0 };
+    segs.forEach(function (sg, i) {
+      if (keep[i]) out.push(sg);
+      else { rest.v += sg.v; rest.count++; }
+    });
+    out.push(rest);
+    return out;
+  }
+
   function dashArray (style, width) {
     var w = Math.max(0.5, Number(width) || 1);
     if (style === 'dashed') return (3 * w) + ',' + (3 * w);
@@ -548,7 +568,10 @@
     tint: tint,
     shades: shades,
     contrastText: contrastText,
-    dashArray: dashArray
+    dashArray: dashArray,
+    TOP_SEGMENTS: TOP_SEGMENTS,
+    OTHERS: OTHERS,
+    topSegments: topSegments
   };
   // The icon helpers in icons.js / the KPI picker code refer to Kpi3.
   window.Kpi3 = window.Kpi3 || window.Wf;

@@ -6,7 +6,7 @@
  *
  * - Settings live in localStorage, so the chart and the Format dialog (two
  *   frames) see each other's changes, like they do inside Tableau.
- * - Sample data: ?data=figma | breakdown | breakdownLod | negative | raw | zero
+ * - Sample data: ?data=figma | breakdown | breakdownMany | breakdownLod | negative | raw | zero
  *   (breakdownLod: Start / End repeat on every row, like a FIXED / EXCLUDE balance)
  * - Start/End read with columnsToIncludeById come back as one row of totals
  *   (?keepLod: every row, i.e. Tableau keeps the Breakdown).
@@ -47,6 +47,13 @@
         [['Current', 'Retail'], ['Current', 'SME'], ['Ehsan', 'Retail'], ['Musaned', 'Retail'], ['Savings', 'Retail'], ['Savings', 'SME']],
         [0.4, 0.15, 0.15, 0.1, 0.12, 0.08]]
     },
+    // 14 members: the chart shows the top 10 and sums the rest into "Others"
+    breakdownMany: {
+      def: null, // set below: same bars as breakdown
+      breakdown: [['Branch'],
+        [['Riyadh'], ['Jeddah'], ['Dammam'], ['Makkah'], ['Madinah'], ['Khobar'], ['Tabuk'], ['Abha'], ['Taif'], ['Hail'], ['Jazan'], ['Najran'], ['Buraidah'], ['Yanbu']],
+        [0.22, 0.16, 0.12, 0.1, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.025, 0.02, 0.015, 0.01]]
+    },
     breakdownLod: null, // set below: breakdown with balances repeated per row
     zero: {
       def: {
@@ -64,6 +71,7 @@
     }
   };
 
+  DATASETS.breakdownMany.def = DATASETS.breakdown.def;
   DATASETS.breakdownLod = { def: DATASETS.breakdown.def, breakdown: DATASETS.breakdown.breakdown, repeatBalances: true };
 
   var dsName = params.get('data') || localStorage.getItem(DS_KEY) || 'figma';

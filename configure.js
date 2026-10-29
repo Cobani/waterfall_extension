@@ -29,7 +29,6 @@
     { id: 'axes', label: 'Axes', build: buildAxesTab, keys: ['axisY', 'axisX'] },
     { id: 'lines', label: 'Lines', build: buildLinesTab, keys: ['lines'] },
     { id: 'numbers', label: 'Numbers', build: buildNumbersTab, keys: ['numbers', 'format'] },
-    { id: 'export', label: 'Export', build: buildExportTab, keys: ['export'] },
     { id: 'card', label: 'Card', build: buildCardTab, keys: ['card'] }
   ];
 
@@ -251,7 +250,7 @@
         g4.appendChild(help('Order of the segments in the bar (from the bar’s start) and of the rows in the tooltip.'));
         g4.appendChild(segRow('Colors', P(base, 'breakdown.colorMode'), [['shades', 'Shades of bar colour'], ['custom', 'Custom']], rebuild));
         if (s.breakdown.colorMode === 'custom') {
-          var members = memberList(s.breakdown);
+          var members = memberList(s.breakdown, b);
           if (!members.length) g4.appendChild(help('No breakdown members in the data yet.'));
           var barColor = s.colorMode === 'custom' ? s.color : (b.sign < 0 ? cfg.bars.negColor : cfg.bars.posColor);
           var sh = Wf.shades(barColor, Math.max(1, members.length));
@@ -347,15 +346,23 @@
   }
 
   /** Segment names for a bar's dimension choice (matches chart.js). */
-  function memberList (bd) {
+  /** Segment names of a bar, as the chart draws them: the top ones, then Others. */
+  function memberList (bd, bar) {
     var idx = effectiveDims(bd).map(function (k) { return info.dims.findIndex(function (d) { return d.key === k; }); });
+    var name = function (c) { return idx.map(function (i) { return c[i]; }).join(bd.sep == null ? ' \u00b7 ' : bd.sep); };
     var seen = {};
     var out = [];
     info.combos.forEach(function (c) {
-      var n = idx.map(function (i) { return c[i]; }).join(bd.sep == null ? ' \u00b7 ' : bd.sep);
-      if (!seen[n]) { seen[n] = 1; out.push(n); }
+      var n = name(c);
+      if (!seen[n]) { seen[n] = { member: n, v: 0 }; out.push(seen[n]); }
     });
-    return out;
+    var rows = bar && bar.rows;
+    if (rows && rows.length) {
+      var has = {};
+      rows.forEach(function (r) { var c = info.combos[r.c]; if (c) { var n = name(c); seen[n].v += r.raw; has[n] = 1; } });
+      out = out.filter(function (sg) { return has[sg.member]; });
+    }
+    return Wf.topSegments(out).map(function (sg) { return sg.member; });
   }
 
   /**
@@ -594,18 +601,6 @@
     var g3 = group(p, 'Chart text');
     g3.appendChild(fontFamilyRow('Font', 'numbers.font'));
     g3.appendChild(help('Font of bar values, breakdown values and group labels. Axis fonts are on the Axes tab; the vertical axis has its own number format there.'));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Export tab
-  // ---------------------------------------------------------------------------
-  function buildExportTab (p) {
-    var g1 = group(p, 'Export button');
-    g1.appendChild(segRow('Show', 'export.button', [['hover', 'On hover'], ['always', 'Always'], ['never', 'Never']]));
-    g1.appendChild(help('The button at the top right downloads the chart’s data as Excel or CSV, or copies it to paste into Excel.'));
-    var g2 = group(p, 'Files');
-    g2.appendChild(textRow('File name', 'export.fileName', 'Empty = the title'));
-    g2.appendChild(help('Today’s date is added, e.g. “Transfers 2026-10-20.xlsx”. Tableau Desktop can block downloads from extensions; then use Copy data. Tableau Server and Cloud in a browser download normally.'));
   }
 
   function buildCardTab (p) {
